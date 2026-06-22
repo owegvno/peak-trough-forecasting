@@ -39,6 +39,33 @@ def make_records(start: datetime, hours: int) -> list[dict[str, str]]:
     return records
 
 
+def write_wide_rows(dataset_dir: Path, target_col: str, rows: list[dict[str, object]], pred_days: int = 2) -> None:
+    target_dir = dataset_dir / target_col
+    target_dir.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["样本ID", "预测起点日期", "目标变量", "预测天数", "基线峰值", "数据集划分"]
+    for day in range(1, pred_days + 1):
+        fieldnames.extend(
+            [
+                f"第{day}天_目标峰值",
+                f"第{day}天_目标峰值残差",
+                f"第{day}天_目标峰值小时",
+                f"第{day}天_目标谷值",
+                f"第{day}天_目标谷值残差",
+                f"第{day}天_目标谷值小时",
+                f"第{day}天_日历_星期",
+                f"第{day}天_日历_月份",
+                f"第{day}天_日历_年内日序",
+                f"第{day}天_日历_是否周末",
+            ]
+        )
+    fieldnames.append(f"{target_col}_过去96小时_均值")
+    path = target_dir / f"峰谷预测样本_seq48_pred48_{target_col}.csv"
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 class DatasetGenerationTests(unittest.TestCase):
     def test_chinese_column_mapping_keeps_internal_and_output_names(self) -> None:
         self.assertEqual(COLUMN_EN_TO_ZH["sample_id"], "样本ID")
@@ -347,6 +374,104 @@ class DatasetGenerationTests(unittest.TestCase):
                 self.assertIn("ETTH1_pred2_seq1", str(col_paths["peaks_troughs"]))
                 self.assertGreater(col_paths["peaks_troughs"].stat().st_size, 1000)
                 self.assertGreater(col_paths["turning_points"].stat().st_size, 1000)
+
+    def test_convert_wide_dataset_to_long_table_outputs_chinese_columns_and_merges_all_features(self) -> None:
+        from wave_dataset.long_table import convert_dataset_to_long_tables
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "ETTH1_pred2_seq2"
+            write_wide_rows(
+                dataset_dir,
+                "HUFL",
+                [
+                    {
+                        "样本ID": "S000001",
+                        "预测起点日期": "2020-01-05",
+                        "目标变量": "HUFL",
+                        "预测天数": 2,
+                        "基线峰值": 10.0,
+                        "数据集划分": "训练",
+                        "第1天_目标峰值": 11.0,
+                        "第1天_目标峰值残差": 1.0,
+                        "第1天_目标峰值小时": 3,
+                        "第1天_目标谷值": 4.0,
+                        "第1天_目标谷值残差": -1.0,
+                        "第1天_目标谷值小时": 8,
+                        "第1天_日历_星期": 1,
+                        "第1天_日历_月份": 1,
+                        "第1天_日历_年内日序": 5,
+                        "第1天_日历_是否周末": 0,
+                        "第2天_目标峰值": 12.0,
+                        "第2天_目标峰值残差": 2.0,
+                        "第2天_目标峰值小时": 4,
+                        "第2天_目标谷值": 5.0,
+                        "第2天_目标谷值残差": 0.0,
+                        "第2天_目标谷值小时": 9,
+                        "第2天_日历_星期": 2,
+                        "第2天_日历_月份": 1,
+                        "第2天_日历_年内日序": 6,
+                        "第2天_日历_是否周末": 0,
+                        "HUFL_过去96小时_均值": 7.1,
+                    }
+                ],
+            )
+            write_wide_rows(
+                dataset_dir,
+                "OT",
+                [
+                    {
+                        "样本ID": "S000001",
+                        "预测起点日期": "2020-01-05",
+                        "目标变量": "OT",
+                        "预测天数": 2,
+                        "基线峰值": 30.0,
+                        "数据集划分": "训练",
+                        "第1天_目标峰值": 31.0,
+                        "第1天_目标峰值残差": 1.0,
+                        "第1天_目标峰值小时": 13,
+                        "第1天_目标谷值": 20.0,
+                        "第1天_目标谷值残差": -2.0,
+                        "第1天_目标谷值小时": 5,
+                        "第1天_日历_星期": 1,
+                        "第1天_日历_月份": 1,
+                        "第1天_日历_年内日序": 5,
+                        "第1天_日历_是否周末": 0,
+                        "第2天_目标峰值": 32.0,
+                        "第2天_目标峰值残差": 2.0,
+                        "第2天_目标峰值小时": 14,
+                        "第2天_目标谷值": 21.0,
+                        "第2天_目标谷值残差": -1.0,
+                        "第2天_目标谷值小时": 6,
+                        "第2天_日历_星期": 2,
+                        "第2天_日历_月份": 1,
+                        "第2天_日历_年内日序": 6,
+                        "第2天_日历_是否周末": 0,
+                        "OT_过去96小时_均值": 27.5,
+                    }
+                ],
+            )
+
+            result = convert_dataset_to_long_tables(dataset_dir, target_cols=["HUFL", "OT"], seq_days=2, pred_days=2)
+
+            self.assertTrue((dataset_dir / "长表" / "OT" / "峰谷预测长表_seq48_pred48_OT.csv").exists())
+            self.assertEqual(result["row_counts"]["OT"], 2)
+            with (dataset_dir / "长表" / "OT" / "峰谷预测长表_seq48_pred48_OT.csv").open(
+                "r", encoding="utf-8-sig", newline=""
+            ) as handle:
+                rows = list(csv.DictReader(handle))
+
+            self.assertEqual([row["预测天数"] for row in rows], ["1", "2"])
+            self.assertEqual(rows[0]["目标变量"], "OT")
+            self.assertEqual(rows[0]["目标峰值"], "31.0")
+            self.assertEqual(rows[1]["目标峰值小时"], "14")
+            self.assertEqual(rows[0]["日历_星期"], "6")
+            self.assertEqual(rows[0]["日历_是否周末"], "1")
+            self.assertEqual(rows[1]["日历_星期"], "0")
+            self.assertEqual(rows[1]["日历_是否周末"], "0")
+            self.assertEqual(rows[0]["OT_过去96小时_均值"], "27.5")
+            self.assertEqual(rows[0]["HUFL_过去96小时_均值"], "7.1")
+            self.assertNotIn("horizon", rows[0])
+            self.assertNotIn("target_peak_value", rows[0])
 
 
 if __name__ == "__main__":
