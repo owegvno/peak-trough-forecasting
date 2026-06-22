@@ -41,7 +41,7 @@ HUFL, HULL, MUFL, MULL, LUFL, LULL, OT
 使用峰值预测样本长表：
 
 ```text
-代码实现/数据集/峰值预测样本_seq96_pred336.csv
+数据集/峰值预测样本_seq96_pred336.csv
 ```
 
 每次训练时按 `target_col` 过滤：
@@ -150,12 +150,12 @@ pred_peak_hour = 分类概率最大的小时
 建议输出：
 
 ```text
-代码实现/模型/LightGBM/HUFL_peak_value.txt
-代码实现/模型/LightGBM/HUFL_peak_hour.txt
+模型/LightGBM/HUFL_peak_value.txt
+模型/LightGBM/HUFL_peak_hour.txt
 ...
-代码实现/结果/LightGBM/预测结果_seq96_pred336.csv
-代码实现/结果/LightGBM/评估结果_seq96_pred336.csv
-代码实现/结果/LightGBM/特征重要性_seq96_pred336.csv
+结果/LightGBM/预测结果_seq96_pred336.csv
+结果/LightGBM/评估结果_seq96_pred336.csv
+结果/LightGBM/特征重要性_seq96_pred336.csv
 ```
 
 预测结果表建议字段：

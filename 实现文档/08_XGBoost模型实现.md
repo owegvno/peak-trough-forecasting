@@ -117,12 +117,12 @@ pred_peak_hour = argmax(pred_probability)
 建议输出：
 
 ```text
-代码实现/模型/XGBoost/HUFL_peak_value.json
-代码实现/模型/XGBoost/HUFL_peak_hour.json
+模型/XGBoost/HUFL_peak_value.json
+模型/XGBoost/HUFL_peak_hour.json
 ...
-代码实现/结果/XGBoost/预测结果_seq96_pred336.csv
-代码实现/结果/XGBoost/评估结果_seq96_pred336.csv
-代码实现/结果/XGBoost/特征重要性_seq96_pred336.csv
+结果/XGBoost/预测结果_seq96_pred336.csv
+结果/XGBoost/评估结果_seq96_pred336.csv
+结果/XGBoost/特征重要性_seq96_pred336.csv
 ```
 
 ## 7. 速度与资源注意事项

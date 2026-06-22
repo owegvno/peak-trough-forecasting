@@ -12,3 +12,5 @@ env/
 .env
 .DS_Store
 Thumbs.db
+数据集/
+数据集可视化/
