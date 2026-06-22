@@ -41,7 +41,7 @@ HUFL, HULL, MUFL, MULL, LUFL, LULL, OT
 使用峰值预测样本长表：
 
 ```text
-数据集/峰值预测样本_seq96_pred336.csv
+[当前实现] 宽表按变量保存于 数据集/ETTH1_pred14_seq4/{变量}/；训练建议优先使用长表 数据集/ETTH1_pred14_seq4/长表/峰谷预测长表_seq96_pred336_全部变量.csv
 ```
 
 每次训练时按 `target_col` 过滤：
@@ -150,12 +150,12 @@ pred_peak_hour = 分类概率最大的小时
 建议输出：
 
 ```text
-模型/LightGBM/HUFL_peak_value.txt
-模型/LightGBM/HUFL_peak_hour.txt
+[待确认] 实验输出/models/lightgbm/HUFL_peak_value.txt
+[待确认] 实验输出/models/lightgbm/HUFL_peak_hour.txt
 ...
-结果/LightGBM/预测结果_seq96_pred336.csv
-结果/LightGBM/评估结果_seq96_pred336.csv
-结果/LightGBM/特征重要性_seq96_pred336.csv
+[待确认] 实验输出/results/lightgbm/预测结果_seq96_pred336.csv
+[待确认] 实验输出/results/lightgbm/评估结果_seq96_pred336.csv
+[待确认] 实验输出/results/lightgbm/特征重要性_seq96_pred336.csv
 ```
 
 预测结果表建议字段：
@@ -199,3 +199,6 @@ horizon 是否重要
 | peak_hour 准确率低 | 峰值时间随机性强 | 看峰值小时分布 |
 | 预测峰值过平滑 | 模型退化到均值 | 检查分布和残差目标 |
 
+## 10. 当前实现路径待确认
+
+[待确认] 当前项目已有数据集代码位于 `src/wave_dataset/`，但 LightGBM 训练代码尚未确认落位。建议后续新增模型相关代码到 `src/wave_experiments/`，输出结果到 `实验输出/`。如果你希望继续使用 `代码实现/` 目录，需要先统一调整所有执行提示词和文档路径。

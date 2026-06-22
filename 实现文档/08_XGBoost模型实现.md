@@ -117,12 +117,12 @@ pred_peak_hour = argmax(pred_probability)
 建议输出：
 
 ```text
-模型/XGBoost/HUFL_peak_value.json
-模型/XGBoost/HUFL_peak_hour.json
+[待确认] 实验输出/models/xgboost/HUFL_peak_value.json
+[待确认] 实验输出/models/xgboost/HUFL_peak_hour.json
 ...
-结果/XGBoost/预测结果_seq96_pred336.csv
-结果/XGBoost/评估结果_seq96_pred336.csv
-结果/XGBoost/特征重要性_seq96_pred336.csv
+[待确认] 实验输出/results/xgboost/预测结果_seq96_pred336.csv
+[待确认] 实验输出/results/xgboost/评估结果_seq96_pred336.csv
+[待确认] 实验输出/results/xgboost/特征重要性_seq96_pred336.csv
 ```
 
 ## 7. 速度与资源注意事项
@@ -146,3 +146,6 @@ XGBoost 可能比 LightGBM 慢。若训练较慢，可以：
 | 比 LightGBM 差很多 | 参数不适配 | 先调整深度和正则 |
 | 分类模型偏向常见小时 | 类别不平衡 | 查看 peak_hour 分布 |
 
+## 9. 当前实现路径待确认
+
+[待确认] 当前项目已有数据集代码位于 `src/wave_dataset/`，但 XGBoost 训练代码尚未确认落位。建议后续新增模型相关代码到 `src/wave_experiments/`，输出结果到 `实验输出/`。如果你希望继续使用 `代码实现/` 目录，需要先统一调整所有执行提示词和文档路径。
