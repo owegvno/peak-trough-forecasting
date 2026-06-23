@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 from wave_dataset.visualization import (
-    DEFAULT_PEAK_HOUR_BASELINE_NAME,
-    DEFAULT_PEAK_PLOT_GROUP_NAME,
-    DEFAULT_PEAK_VALUE_BASELINE_NAME,
-    plot_baseline_peak_prediction_batch,
+    plot_peak_hour_prediction_batch,
+    plot_peak_value_prediction_batch,
 )
 
 
@@ -20,29 +18,36 @@ def maybe_plot_peak_baseline_predictions(
     output_root: Union[str, Path] = "数据集可视化",
     dataset_name: str = "ETTH1_pred14_seq4",
     split: str = "验证",
-    sample_count: int = 20,
-    value_baseline_name: Optional[str] = DEFAULT_PEAK_VALUE_BASELINE_NAME,
-    hour_baseline_name: Optional[str] = DEFAULT_PEAK_HOUR_BASELINE_NAME,
-    plot_group_name: str = DEFAULT_PEAK_PLOT_GROUP_NAME,
-) -> dict[str, list[Path]]:
-    """Plot peak baseline predictions when both value and hour CSVs are available."""
+    sample_count: int = 6,
+    plot_value: bool = True,
+    plot_hour: bool = True,
+) -> dict[str, dict[str, dict[str, list[Path]]]]:
+    """Plot available peak-value and peak-hour predictions for every baseline_name."""
 
     value_path = Path(value_prediction_csv)
     hour_path = Path(hour_prediction_csv)
-    missing = [str(path) for path in (value_path, hour_path) if not path.exists()]
-    if missing:
-        print("跳过波峰预测可视化，缺少文件: " + ", ".join(missing))
-        return {}
+    plot_paths: dict[str, dict[str, dict[str, list[Path]]]] = {}
+    if plot_value and value_path.exists():
+        plot_paths["波峰值"] = plot_peak_value_prediction_batch(
+            hourly_csv=hourly_csv,
+            value_prediction_csv=value_path,
+            output_root=output_root,
+            dataset_name=dataset_name,
+            split=split,
+            sample_count=sample_count,
+        )
+    elif plot_value:
+        print(f"跳过波峰值可视化，缺少文件: {value_path}")
 
-    return plot_baseline_peak_prediction_batch(
-        hourly_csv=hourly_csv,
-        value_prediction_csv=value_path,
-        hour_prediction_csv=hour_path,
-        output_root=output_root,
-        dataset_name=dataset_name,
-        split=split,
-        sample_count=sample_count,
-        value_baseline_name=value_baseline_name,
-        hour_baseline_name=hour_baseline_name,
-        plot_group_name=plot_group_name,
-    )
+    if plot_hour and hour_path.exists():
+        plot_paths["波峰小时"] = plot_peak_hour_prediction_batch(
+            hourly_csv=hourly_csv,
+            hour_prediction_csv=hour_path,
+            output_root=output_root,
+            dataset_name=dataset_name,
+            split=split,
+            sample_count=sample_count,
+        )
+    elif plot_hour:
+        print(f"跳过波峰小时可视化，缺少文件: {hour_path}")
+    return plot_paths

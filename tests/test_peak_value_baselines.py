@@ -13,6 +13,7 @@ from wave_experiments.baselines.peak_value_baselines import (
     evaluate_peak_value_baselines,
     run_peak_value_baselines,
 )
+import wave_experiments.baselines.peak_value_baselines as peak_value_module
 
 
 def _base_row(
@@ -158,10 +159,38 @@ def test_run_peak_value_baselines_writes_prediction_and_metric_csvs(tmp_path: Pa
     prediction_path = tmp_path / "predictions.csv"
     metrics_path = tmp_path / "metrics.csv"
 
-    run_peak_value_baselines(input_path, prediction_path, metrics_path)
+    run_peak_value_baselines(input_path, prediction_path, metrics_path, plot_predictions=False)
 
     written_predictions = pd.read_csv(prediction_path)
     written_metrics = pd.read_csv(metrics_path)
     assert set(written_predictions[SPLIT_COLUMN]) == {VAL_SPLIT, TEST_SPLIT}
     assert written_predictions["baseline_peak_value"].isna().sum() == 0
     assert {"MAE", "RMSE", "sMAPE"}.issubset(written_metrics.columns)
+
+
+def test_run_peak_value_baselines_triggers_value_visualization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    train_df, val_df, test_df = _split_frames()
+    input_path = tmp_path / "mini_long_table.csv"
+    pd.concat([train_df, val_df, test_df], ignore_index=True).to_csv(input_path, index=False)
+    prediction_path = tmp_path / "predictions.csv"
+    metrics_path = tmp_path / "metrics.csv"
+    calls: list[dict[str, object]] = []
+
+    def fake_plot(**kwargs: object) -> dict:
+        calls.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(peak_value_module, "maybe_plot_peak_baseline_predictions", fake_plot)
+
+    run_peak_value_baselines(
+        input_path,
+        prediction_path,
+        metrics_path,
+    )
+
+    assert calls == [
+        {
+            "value_prediction_csv": prediction_path,
+            "plot_hour": False,
+        }
+    ]

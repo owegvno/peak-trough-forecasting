@@ -21,7 +21,9 @@ from wave_dataset.visualization import (
     evenly_sample_sample_ids,
     dataset_window_from_name,
     merge_baseline_peak_predictions,
-    plot_baseline_peak_prediction_batch,
+    plot_peak_hour_prediction_batch,
+    plot_peak_prediction_batch,
+    plot_peak_value_prediction_batch,
     plot_dataset_visualizations,
     plot_sample_peaks_troughs,
     plot_sample_turning_points,
@@ -458,7 +460,7 @@ class DatasetGenerationTests(unittest.TestCase):
         self.assertEqual(merged[0]["baseline_peak_value"], 10.25)
         self.assertEqual(merged[0]["baseline_peak_hour"], 8)
 
-    def test_plot_baseline_peak_prediction_batch_writes_rule_group_variable_folders(self) -> None:
+    def test_plot_peak_value_prediction_batch_writes_all_baseline_folders(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             input_path = tmp_path / "ETTh1.csv"
@@ -469,7 +471,6 @@ class DatasetGenerationTests(unittest.TestCase):
                     writer.writerow(row)
 
             value_path = tmp_path / "peak_value_predictions.csv"
-            hour_path = tmp_path / "peak_hour_predictions.csv"
             value_fieldnames = [
                 "样本ID",
                 "预测起点日期",
@@ -480,6 +481,116 @@ class DatasetGenerationTests(unittest.TestCase):
                 "baseline_name",
                 "baseline_peak_value",
             ]
+            with value_path.open("w", encoding="utf-8", newline="") as value_handle:
+                value_writer = csv.DictWriter(value_handle, fieldnames=value_fieldnames)
+                value_writer.writeheader()
+                for sample_idx, start_day in enumerate(["2020-01-03", "2020-01-05"], start=1):
+                    for target_col in ["HUFL", "OT"]:
+                        for horizon in range(1, 3):
+                            for baseline_name, offset in [("weighted_mean_last_4", 10), ("mean_last_4", 15)]:
+                                value_writer.writerow(
+                                    {
+                                        "样本ID": f"S{sample_idx:06d}",
+                                        "预测起点日期": start_day,
+                                        "数据集划分": "验证",
+                                        "目标变量": target_col,
+                                        "预测天数": horizon,
+                                        "目标峰值": 20 + horizon,
+                                        "baseline_name": baseline_name,
+                                        "baseline_peak_value": offset + horizon,
+                                    }
+                                )
+
+            paths = plot_peak_value_prediction_batch(
+                hourly_csv=input_path,
+                value_prediction_csv=value_path,
+                output_root=tmp_path / "数据集可视化",
+                dataset_name="ETTH1_pred2_seq2",
+                target_cols=["HUFL", "OT"],
+                split="验证",
+                sample_count=2,
+            )
+
+            self.assertEqual(set(paths), {"weighted_mean_last_4", "mean_last_4"})
+            self.assertEqual(set(paths["weighted_mean_last_4"]), {"HUFL", "OT"})
+            self.assertEqual(len(paths["weighted_mean_last_4"]["HUFL"]), 2)
+            expected_dir = (
+                tmp_path
+                / "数据集可视化"
+                / "ETTH1_pred2_seq2"
+                / "波峰值"
+                / "weighted_mean_last_4"
+                / "HUFL"
+            )
+            self.assertTrue(expected_dir.is_dir())
+            for baseline_paths in paths.values():
+                for target_paths in baseline_paths.values():
+                    for path in target_paths:
+                        self.assertTrue(path.exists())
+                        self.assertGreater(path.stat().st_size, 1000)
+
+    def test_plot_peak_value_prediction_batch_defaults_to_six_samples_per_variable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "ETTh1.csv"
+            with input_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["date", *TARGET_COLUMNS])
+                writer.writeheader()
+                for row in make_records(datetime(2020, 1, 1), 10 * 24):
+                    writer.writerow(row)
+
+            value_path = tmp_path / "peak_value_predictions.csv"
+            with value_path.open("w", encoding="utf-8", newline="") as value_handle:
+                value_writer = csv.DictWriter(
+                    value_handle,
+                    fieldnames=[
+                        "样本ID",
+                        "预测起点日期",
+                        "数据集划分",
+                        "目标变量",
+                        "预测天数",
+                        "目标峰值",
+                        "baseline_name",
+                        "baseline_peak_value",
+                    ],
+                )
+                value_writer.writeheader()
+                for sample_idx in range(1, 9):
+                    value_writer.writerow(
+                        {
+                            "样本ID": f"S{sample_idx:06d}",
+                            "预测起点日期": f"2020-01-{sample_idx + 1:02d}",
+                            "数据集划分": "验证",
+                            "目标变量": "HUFL",
+                            "预测天数": 1,
+                            "目标峰值": 23,
+                            "baseline_name": "weighted_mean_last_4",
+                            "baseline_peak_value": 11,
+                        }
+                    )
+
+            paths = plot_peak_value_prediction_batch(
+                hourly_csv=input_path,
+                value_prediction_csv=value_path,
+                output_root=tmp_path / "数据集可视化",
+                dataset_name="ETTH1_pred1_seq1",
+                target_cols=["HUFL"],
+                split="验证",
+            )
+
+            self.assertEqual(len(paths["weighted_mean_last_4"]["HUFL"]), 6)
+
+    def test_plot_peak_hour_prediction_batch_writes_all_baseline_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "ETTh1.csv"
+            with input_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["date", *TARGET_COLUMNS])
+                writer.writeheader()
+                for row in make_records(datetime(2020, 1, 1), 8 * 24):
+                    writer.writerow(row)
+
+            hour_path = tmp_path / "peak_hour_predictions.csv"
             hour_fieldnames = [
                 "样本ID",
                 "预测起点日期",
@@ -490,69 +601,144 @@ class DatasetGenerationTests(unittest.TestCase):
                 "baseline_name",
                 "baseline_peak_hour",
             ]
-            with value_path.open("w", encoding="utf-8", newline="") as value_handle, hour_path.open(
-                "w", encoding="utf-8", newline=""
-            ) as hour_handle:
-                value_writer = csv.DictWriter(value_handle, fieldnames=value_fieldnames)
+            with hour_path.open("w", encoding="utf-8", newline="") as hour_handle:
                 hour_writer = csv.DictWriter(hour_handle, fieldnames=hour_fieldnames)
-                value_writer.writeheader()
                 hour_writer.writeheader()
                 for sample_idx, start_day in enumerate(["2020-01-03", "2020-01-05"], start=1):
                     for target_col in ["HUFL", "OT"]:
                         for horizon in range(1, 3):
-                            value_writer.writerow(
-                                {
-                                    "样本ID": f"S{sample_idx:06d}",
-                                    "预测起点日期": start_day,
-                                    "数据集划分": "验证",
-                                    "目标变量": target_col,
-                                    "预测天数": horizon,
-                                    "目标峰值": 20 + horizon,
-                                    "baseline_name": "weighted_mean_last_4",
-                                    "baseline_peak_value": 10 + horizon,
-                                }
-                            )
-                            hour_writer.writerow(
-                                {
-                                    "样本ID": f"S{sample_idx:06d}",
-                                    "预测起点日期": start_day,
-                                    "数据集划分": "验证",
-                                    "目标变量": target_col,
-                                    "预测天数": horizon,
-                                    "目标峰值小时": 23,
-                                    "baseline_name": "mode_last_4",
-                                    "baseline_peak_hour": 12,
-                                }
-                            )
+                            for baseline_name, peak_hour in [("mode_last_4", 12), ("median_last_4", 18)]:
+                                hour_writer.writerow(
+                                    {
+                                        "样本ID": f"S{sample_idx:06d}",
+                                        "预测起点日期": start_day,
+                                        "数据集划分": "验证",
+                                        "目标变量": target_col,
+                                        "预测天数": horizon,
+                                        "目标峰值小时": 23,
+                                        "baseline_name": baseline_name,
+                                        "baseline_peak_hour": peak_hour,
+                                    }
+                                )
 
-            paths = plot_baseline_peak_prediction_batch(
+            paths = plot_peak_hour_prediction_batch(
                 hourly_csv=input_path,
-                value_prediction_csv=value_path,
                 hour_prediction_csv=hour_path,
                 output_root=tmp_path / "数据集可视化",
                 dataset_name="ETTH1_pred2_seq2",
                 target_cols=["HUFL", "OT"],
                 split="验证",
                 sample_count=2,
-                value_baseline_name="weighted_mean_last_4",
-                hour_baseline_name="mode_last_4",
-                plot_group_name="自定义波峰预测",
             )
 
-            self.assertEqual(set(paths), {"HUFL", "OT"})
-            self.assertEqual(len(paths["HUFL"]), 2)
+            self.assertEqual(set(paths), {"mode_last_4", "median_last_4"})
+            self.assertEqual(set(paths["mode_last_4"]), {"HUFL", "OT"})
+            self.assertEqual(len(paths["mode_last_4"]["HUFL"]), 2)
             expected_dir = (
                 tmp_path
                 / "数据集可视化"
                 / "ETTH1_pred2_seq2"
-                / "自定义波峰预测"
+                / "波峰小时"
+                / "mode_last_4"
                 / "HUFL"
             )
             self.assertTrue(expected_dir.is_dir())
-            for target_paths in paths.values():
-                for path in target_paths:
-                    self.assertTrue(path.exists())
-                    self.assertGreater(path.stat().st_size, 1000)
+            for baseline_paths in paths.values():
+                for target_paths in baseline_paths.values():
+                    for path in target_paths:
+                        self.assertTrue(path.exists())
+                        self.assertGreater(path.stat().st_size, 1000)
+
+    def test_plot_peak_prediction_batch_uses_combined_folder_when_value_and_hour_are_supplied(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "ETTh1.csv"
+            with input_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["date", *TARGET_COLUMNS])
+                writer.writeheader()
+                for row in make_records(datetime(2020, 1, 1), 5 * 24):
+                    writer.writerow(row)
+
+            value_path = tmp_path / "peak_value_predictions.csv"
+            hour_path = tmp_path / "peak_hour_predictions.csv"
+            with value_path.open("w", encoding="utf-8", newline="") as value_handle:
+                value_writer = csv.DictWriter(
+                    value_handle,
+                    fieldnames=[
+                        "样本ID",
+                        "预测起点日期",
+                        "数据集划分",
+                        "目标变量",
+                        "预测天数",
+                        "目标峰值",
+                        "baseline_name",
+                        "baseline_peak_value",
+                    ],
+                )
+                value_writer.writeheader()
+                value_writer.writerow(
+                    {
+                        "样本ID": "S000001",
+                        "预测起点日期": "2020-01-03",
+                        "数据集划分": "验证",
+                        "目标变量": "HUFL",
+                        "预测天数": 1,
+                        "目标峰值": 23,
+                        "baseline_name": "weighted_mean_last_4",
+                        "baseline_peak_value": 11,
+                    }
+                )
+            with hour_path.open("w", encoding="utf-8", newline="") as hour_handle:
+                hour_writer = csv.DictWriter(
+                    hour_handle,
+                    fieldnames=[
+                        "样本ID",
+                        "预测起点日期",
+                        "数据集划分",
+                        "目标变量",
+                        "预测天数",
+                        "目标峰值小时",
+                        "baseline_name",
+                        "baseline_peak_hour",
+                    ],
+                )
+                hour_writer.writeheader()
+                hour_writer.writerow(
+                    {
+                        "样本ID": "S000001",
+                        "预测起点日期": "2020-01-03",
+                        "数据集划分": "验证",
+                        "目标变量": "HUFL",
+                        "预测天数": 1,
+                        "目标峰值小时": 23,
+                        "baseline_name": "mode_last_4",
+                        "baseline_peak_hour": 12,
+                    }
+                )
+
+            paths = plot_peak_prediction_batch(
+                hourly_csv=input_path,
+                value_prediction_csv=value_path,
+                hour_prediction_csv=hour_path,
+                output_root=tmp_path / "数据集可视化",
+                dataset_name="ETTH1_pred2_seq2",
+                target_cols=["HUFL"],
+                split="验证",
+                sample_count=1,
+                value_baseline_name="weighted_mean_last_4",
+                hour_baseline_name="mode_last_4",
+            )
+
+            expected_dir = (
+                tmp_path
+                / "数据集可视化"
+                / "ETTH1_pred2_seq2"
+                / "波峰小时图"
+                / "weighted_mean_last_4+mode_last_4"
+                / "HUFL"
+            )
+            self.assertTrue(expected_dir.is_dir())
+            self.assertEqual(len(paths["weighted_mean_last_4+mode_last_4"]["HUFL"]), 1)
 
     def test_convert_wide_dataset_to_long_table_outputs_chinese_columns_and_merges_all_features(self) -> None:
         from wave_dataset.long_table import convert_dataset_to_long_tables

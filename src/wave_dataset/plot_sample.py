@@ -6,10 +6,8 @@ from pathlib import Path
 from .visualization import (
     DEFAULT_BASELINE_HOUR_PREDICTION_CSV,
     DEFAULT_BASELINE_VALUE_PREDICTION_CSV,
-    DEFAULT_PEAK_HOUR_BASELINE_NAME,
-    DEFAULT_PEAK_PLOT_GROUP_NAME,
-    DEFAULT_PEAK_VALUE_BASELINE_NAME,
-    plot_baseline_peak_prediction_batch,
+    plot_peak_hour_prediction_batch,
+    plot_peak_value_prediction_batch,
     plot_dataset_visualizations,
 )
 
@@ -25,10 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--baseline-peaks", action="store_true", help="绘制波峰预测结果，而不是标签可视化")
     parser.add_argument("--value-prediction", default=str(DEFAULT_BASELINE_VALUE_PREDICTION_CSV), help="波峰值预测 CSV")
     parser.add_argument("--hour-prediction", default=str(DEFAULT_BASELINE_HOUR_PREDICTION_CSV), help="波峰小时预测 CSV")
-    parser.add_argument("--baseline-value", default=DEFAULT_PEAK_VALUE_BASELINE_NAME, help="波峰值规则/模型名称")
-    parser.add_argument("--baseline-hour", default=DEFAULT_PEAK_HOUR_BASELINE_NAME, help="波峰小时规则/模型名称")
-    parser.add_argument("--plot-group-name", default=DEFAULT_PEAK_PLOT_GROUP_NAME, help="输出分组文件夹名")
-    parser.add_argument("--sample-count", type=int, default=20, help="均匀采样样本数")
+    parser.add_argument("--sample-count", type=int, default=6, help="每个变量均匀采样样本数")
     return parser.parse_args()
 
 
@@ -36,23 +31,30 @@ def main() -> None:
     args = parse_args()
     target_cols = [args.target_col] if args.target_col else None
     if args.baseline_peaks:
-        paths = plot_baseline_peak_prediction_batch(
-            Path(args.input),
-            value_prediction_csv=Path(args.value_prediction),
-            hour_prediction_csv=Path(args.hour_prediction),
-            output_root=Path(args.output_root),
-            dataset_name=args.dataset_name,
-            target_cols=target_cols,
-            split=args.split,
-            sample_count=args.sample_count,
-            value_baseline_name=args.baseline_value,
-            hour_baseline_name=args.baseline_hour,
-            plot_group_name=args.plot_group_name,
-        )
-        for col, col_paths in paths.items():
-            print(f"{col} 波峰预测图: {len(col_paths)} 张")
-            for path in col_paths:
-                print(f"  {path}")
+        if Path(args.value_prediction).exists():
+            value_paths = plot_peak_value_prediction_batch(
+                Path(args.input),
+                value_prediction_csv=Path(args.value_prediction),
+                output_root=Path(args.output_root),
+                dataset_name=args.dataset_name,
+                target_cols=target_cols,
+                split=args.split,
+                sample_count=args.sample_count,
+            )
+            for baseline_name, baseline_paths in value_paths.items():
+                print(f"波峰值 {baseline_name}: " + ", ".join(f"{col}={len(paths)}" for col, paths in baseline_paths.items()))
+        if Path(args.hour_prediction).exists():
+            hour_paths = plot_peak_hour_prediction_batch(
+                Path(args.input),
+                hour_prediction_csv=Path(args.hour_prediction),
+                output_root=Path(args.output_root),
+                dataset_name=args.dataset_name,
+                target_cols=target_cols,
+                split=args.split,
+                sample_count=args.sample_count,
+            )
+            for baseline_name, baseline_paths in hour_paths.items():
+                print(f"波峰小时 {baseline_name}: " + ", ".join(f"{col}={len(paths)}" for col, paths in baseline_paths.items()))
         return
 
     paths = plot_dataset_visualizations(

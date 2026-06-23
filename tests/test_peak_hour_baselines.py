@@ -12,6 +12,7 @@ from wave_experiments.baselines.peak_hour_baselines import (
     evaluate_peak_hour_baselines,
     run_peak_hour_baselines,
 )
+import wave_experiments.baselines.peak_hour_baselines as peak_hour_module
 
 
 def _base_row(
@@ -160,7 +161,7 @@ def test_run_peak_hour_baselines_writes_prediction_and_metric_csvs(tmp_path: Pat
     prediction_path = tmp_path / "predictions.csv"
     metrics_path = tmp_path / "metrics.csv"
 
-    run_peak_hour_baselines(input_path, prediction_path, metrics_path)
+    run_peak_hour_baselines(input_path, prediction_path, metrics_path, plot_predictions=False)
 
     written_predictions = pd.read_csv(prediction_path)
     written_metrics = pd.read_csv(metrics_path)
@@ -170,3 +171,31 @@ def test_run_peak_hour_baselines_writes_prediction_and_metric_csvs(tmp_path: Pat
     assert {"普通小时误差", "环形小时误差", "Top-1 accuracy", "±1h 命中率", "±2h 命中率"}.issubset(
         written_metrics.columns
     )
+
+
+def test_run_peak_hour_baselines_triggers_hour_visualization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    train_df, val_df, test_df = _split_frames()
+    input_path = tmp_path / "mini_long_table.csv"
+    pd.concat([train_df, val_df, test_df], ignore_index=True).to_csv(input_path, index=False)
+    prediction_path = tmp_path / "predictions.csv"
+    metrics_path = tmp_path / "metrics.csv"
+    calls: list[dict[str, object]] = []
+
+    def fake_plot(**kwargs: object) -> dict:
+        calls.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(peak_hour_module, "maybe_plot_peak_baseline_predictions", fake_plot)
+
+    run_peak_hour_baselines(
+        input_path,
+        prediction_path,
+        metrics_path,
+    )
+
+    assert calls == [
+        {
+            "hour_prediction_csv": prediction_path,
+            "plot_value": False,
+        }
+    ]

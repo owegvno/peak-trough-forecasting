@@ -333,6 +333,7 @@ def run_peak_hour_baselines(
     input_path: Optional[Union[Path, str]] = None,
     prediction_path: Optional[Union[Path, str]] = None,
     metrics_path: Optional[Union[Path, str]] = None,
+    plot_predictions: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Load data, generate peak-hour baselines, write predictions and metrics."""
 
@@ -351,6 +352,12 @@ def run_peak_hour_baselines(
     predictions.to_csv(resolved_prediction_path, index=False)
     metrics.to_csv(resolved_metrics_path, index=False)
 
+    if plot_predictions:
+        maybe_plot_peak_baseline_predictions(
+            hour_prediction_csv=resolved_prediction_path,
+            plot_value=False,
+        )
+
     return predictions, metrics
 
 
@@ -366,9 +373,7 @@ def main() -> None:
         "prediction_splits: "
         + ", ".join(f"{split}={count}" for split, count in predictions[SPLIT_COLUMN].value_counts().items())
     )
-    plot_paths = maybe_plot_peak_baseline_predictions()
-    if plot_paths:
-        print("波峰预测可视化: " + ", ".join(f"{col}={len(paths)}" for col, paths in plot_paths.items()))
+    print("可视化任务: 波峰小时")
 
 
 if __name__ == "__main__":
