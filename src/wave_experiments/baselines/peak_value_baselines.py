@@ -18,6 +18,7 @@ from wave_experiments.baselines.load_baseline_data import (
     VAL_SPLIT,
     load_peak_dataset,
 )
+from wave_experiments.baselines.visualize_baselines import maybe_plot_peak_baseline_predictions
 
 
 SAMPLE_ID_COLUMN = "样本ID"
@@ -356,6 +357,9 @@ def main() -> None:
         "prediction_splits: "
         + ", ".join(f"{split}={count}" for split, count in predictions[SPLIT_COLUMN].value_counts().items())
     )
+    plot_paths = maybe_plot_peak_baseline_predictions()
+    if plot_paths:
+        print("波峰预测可视化: " + ", ".join(f"{col}={len(paths)}" for col, paths in plot_paths.items()))
 
 
 if __name__ == "__main__":
