@@ -24,6 +24,7 @@ from wave_dataset.visualization import (
     plot_peak_hour_prediction_batch,
     plot_peak_prediction_batch,
     plot_peak_value_prediction_batch,
+    plot_selected_best_baseline_prediction_batch,
     plot_dataset_visualizations,
     plot_sample_peaks_troughs,
     plot_sample_turning_points,
@@ -739,6 +740,85 @@ class DatasetGenerationTests(unittest.TestCase):
             )
             self.assertTrue(expected_dir.is_dir())
             self.assertEqual(len(paths["weighted_mean_last_4+mode_last_4"]["HUFL"]), 1)
+
+    def test_plot_selected_best_baseline_prediction_batch_writes_target_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "ETTh1.csv"
+            with input_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["date", *TARGET_COLUMNS])
+                writer.writeheader()
+                for row in make_records(datetime(2020, 1, 1), 8 * 24):
+                    writer.writerow(row)
+
+            selected_path = tmp_path / "dataset_with_selected_baselines.csv"
+            fieldnames = [
+                "样本ID",
+                "预测起点日期",
+                "数据集划分",
+                "目标变量",
+                "预测天数",
+                "目标峰值",
+                "baseline_peak",
+                "target_peak_residual",
+                "peak_value_baseline_name",
+                "目标峰值小时",
+                "baseline_peak_hour",
+                "peak_hour_baseline_name",
+                "peak_hour_ordinary_error",
+                "peak_hour_circular_error",
+                "peak_hour_within_2h",
+            ]
+            with selected_path.open("w", encoding="utf-8", newline="") as selected_handle:
+                writer = csv.DictWriter(selected_handle, fieldnames=fieldnames)
+                writer.writeheader()
+                for sample_idx, start_day in enumerate(["2020-01-03", "2020-01-05"], start=1):
+                    for target_col in ["HUFL", "OT"]:
+                        for horizon in range(1, 3):
+                            writer.writerow(
+                                {
+                                    "样本ID": f"S{sample_idx:06d}",
+                                    "预测起点日期": start_day,
+                                    "数据集划分": "验证",
+                                    "目标变量": target_col,
+                                    "预测天数": horizon,
+                                    "目标峰值": 20 + horizon,
+                                    "baseline_peak": 10 + horizon,
+                                    "target_peak_residual": 10,
+                                    "peak_value_baseline_name": "mean_last_4" if horizon == 1 else "cycle_mod_4",
+                                    "目标峰值小时": 23,
+                                    "baseline_peak_hour": 12 if horizon == 1 else 18,
+                                    "peak_hour_baseline_name": "mode_last_4" if horizon == 1 else "global_mode",
+                                    "peak_hour_ordinary_error": 11,
+                                    "peak_hour_circular_error": 6,
+                                    "peak_hour_within_2h": "False",
+                                }
+                            )
+
+            paths = plot_selected_best_baseline_prediction_batch(
+                hourly_csv=input_path,
+                selected_baseline_csv=selected_path,
+                output_root=tmp_path / "数据集可视化",
+                dataset_name="ETTH1_pred2_seq2",
+                target_cols=["HUFL", "OT"],
+                split="验证",
+                sample_count=2,
+            )
+
+            self.assertEqual(set(paths), {"HUFL", "OT"})
+            self.assertEqual(len(paths["HUFL"]), 2)
+            expected_dir = (
+                tmp_path
+                / "数据集可视化"
+                / "ETTH1_pred2_seq2"
+                / "逐日最佳基线组合"
+                / "HUFL"
+            )
+            self.assertTrue(expected_dir.is_dir())
+            for target_paths in paths.values():
+                for path in target_paths:
+                    self.assertTrue(path.exists())
+                    self.assertGreater(path.stat().st_size, 1000)
 
     def test_convert_wide_dataset_to_long_table_outputs_chinese_columns_and_merges_all_features(self) -> None:
         from wave_dataset.long_table import convert_dataset_to_long_tables

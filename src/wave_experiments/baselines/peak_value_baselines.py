@@ -213,9 +213,9 @@ def build_peak_value_predictions(
     val_df: pd.DataFrame,
     test_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Build peak-value baseline predictions for validation and test rows."""
+    """Build peak-value baseline predictions for train, validation, and test rows."""
 
-    predict_df = pd.concat([val_df, test_df], ignore_index=True)
+    predict_df = pd.concat([train_df, val_df, test_df], ignore_index=True)
     if train_df.empty:
         raise ValueError("训练集为空，无法构建 weekday_horizon_mean 基线")
     if predict_df.empty:

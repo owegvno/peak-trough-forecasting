@@ -6,7 +6,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from wave_experiments.baselines.load_baseline_data import SPLIT_COLUMN, TEST_SPLIT, VAL_SPLIT
+from wave_experiments.baselines.load_baseline_data import (
+    SPLIT_COLUMN,
+    TEST_SPLIT,
+    TRAIN_SPLIT,
+    VAL_SPLIT,
+)
 from wave_experiments.baselines.peak_value_baselines import (
     BASELINE_NAMES,
     build_peak_value_predictions,
@@ -62,12 +67,12 @@ def _split_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return pd.DataFrame(train_rows), pd.DataFrame(val_rows), pd.DataFrame(test_rows)
 
 
-def test_build_peak_value_predictions_generates_all_baselines_for_val_and_test() -> None:
+def test_build_peak_value_predictions_generates_all_baselines_for_train_val_and_test() -> None:
     train_df, val_df, test_df = _split_frames()
 
     predictions = build_peak_value_predictions(train_df, val_df, test_df)
 
-    assert set(predictions[SPLIT_COLUMN]) == {VAL_SPLIT, TEST_SPLIT}
+    assert set(predictions[SPLIT_COLUMN]) == {TRAIN_SPLIT, VAL_SPLIT, TEST_SPLIT}
     assert set(predictions["baseline_name"]) == set(BASELINE_NAMES)
     assert predictions["baseline_peak_value"].isna().sum() == 0
     assert {
@@ -101,6 +106,14 @@ def test_build_peak_value_predictions_generates_all_baselines_for_val_and_test()
     ].iloc[0]
     assert fallback_value == pytest.approx(60.0)
 
+    train_by_baseline = (
+        predictions.loc[predictions["样本ID"] == "T1"]
+        .set_index("baseline_name")["baseline_peak_value"]
+        .to_dict()
+    )
+    assert train_by_baseline["mean_last_4"] == pytest.approx(11.0)
+    assert train_by_baseline["weekday_horizon_mean"] == pytest.approx(101.0)
+
 
 def test_evaluate_peak_value_baselines_outputs_four_metric_levels() -> None:
     train_df, val_df, test_df = _split_frames()
@@ -116,7 +129,7 @@ def test_evaluate_peak_value_baselines_outputs_four_metric_levels() -> None:
         "target_variable_horizon",
     }
     assert set(metrics["baseline_name"]) == set(BASELINE_NAMES)
-    assert set(metrics[SPLIT_COLUMN]) == {VAL_SPLIT, TEST_SPLIT}
+    assert set(metrics[SPLIT_COLUMN]) == {TRAIN_SPLIT, VAL_SPLIT, TEST_SPLIT}
 
     row = metrics.loc[
         (metrics[SPLIT_COLUMN] == VAL_SPLIT)
@@ -163,7 +176,7 @@ def test_run_peak_value_baselines_writes_prediction_and_metric_csvs(tmp_path: Pa
 
     written_predictions = pd.read_csv(prediction_path)
     written_metrics = pd.read_csv(metrics_path)
-    assert set(written_predictions[SPLIT_COLUMN]) == {VAL_SPLIT, TEST_SPLIT}
+    assert set(written_predictions[SPLIT_COLUMN]) == {TRAIN_SPLIT, VAL_SPLIT, TEST_SPLIT}
     assert written_predictions["baseline_peak_value"].isna().sum() == 0
     assert {"MAE", "RMSE", "sMAPE"}.issubset(written_metrics.columns)
 

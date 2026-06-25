@@ -23,9 +23,11 @@ from .peak_dataset import parse_hourly_csv
 
 DEFAULT_BASELINE_VALUE_PREDICTION_CSV = Path("实验输出/results/baselines/peak_value_baseline_predictions.csv")
 DEFAULT_BASELINE_HOUR_PREDICTION_CSV = Path("实验输出/results/baselines/peak_hour_baseline_predictions.csv")
+DEFAULT_SELECTED_BASELINE_CSV = Path("实验输出/results/baselines/dataset_with_selected_baselines.csv")
 DEFAULT_PEAK_VALUE_BASELINE_NAME = "weighted_mean_last_4"
 DEFAULT_PEAK_HOUR_BASELINE_NAME = "mode_last_4"
 DEFAULT_PEAK_PLOT_GROUP_NAME = "波峰规则基线"
+DEFAULT_SELECTED_BASELINE_PLOT_GROUP_NAME = "逐日最佳基线组合"
 
 
 @dataclass(frozen=True)
@@ -703,6 +705,64 @@ def plot_peak_prediction_batch(
                     output_dir=output_dir,
                     value_baseline_name=value_baseline_name,
                     hour_baseline_name=hour_baseline_name,
+                )
+            )
+    return output_paths
+
+
+def plot_selected_best_baseline_prediction_batch(
+    hourly_csv: list[dict[str, object]] | str | Path = "ETTh1.csv",
+    selected_baseline_csv: str | Path = DEFAULT_SELECTED_BASELINE_CSV,
+    output_root: str | Path = "数据集可视化",
+    dataset_name: str = "ETTH1_pred14_seq4",
+    target_cols: list[str] | None = None,
+    split: str = "验证",
+    sample_count: int = 6,
+    plot_group_name: str = DEFAULT_SELECTED_BASELINE_PLOT_GROUP_NAME,
+) -> dict[str, list[Path]]:
+    records = hourly_csv if isinstance(hourly_csv, list) else parse_hourly_csv(hourly_csv)
+    selected_rows = read_prediction_rows(selected_baseline_csv)
+    sample_ids = evenly_sample_sample_ids(selected_rows, split=split, sample_count=sample_count)
+    cols = target_cols or TARGET_COLUMNS
+    output_paths: dict[str, list[Path]] = {col: [] for col in cols}
+
+    for target_col in cols:
+        output_dir = Path(output_root) / dataset_name / plot_group_name / target_col
+        for sample_id in sample_ids:
+            filtered_rows = [
+                row
+                for row in selected_rows
+                if row.get("样本ID") == sample_id
+                and row.get("目标变量") == target_col
+                and row.get("数据集划分") == split
+            ]
+            if not filtered_rows:
+                continue
+            plot_rows: list[dict[str, Any]] = []
+            for row in sorted(filtered_rows, key=lambda item: int(float(item["预测天数"]))):
+                plot_rows.append(
+                    {
+                        "样本ID": row["样本ID"],
+                        "预测起点日期": row["预测起点日期"],
+                        "数据集划分": row["数据集划分"],
+                        "预测天数": int(float(row["预测天数"])),
+                        "目标变量": row["目标变量"],
+                        "目标峰值": float(row["目标峰值"]),
+                        "目标峰值小时": int(float(row["目标峰值小时"])),
+                        "baseline_peak_value": float(row["baseline_peak"]),
+                        "baseline_peak_hour": int(float(row["baseline_peak_hour"])),
+                    }
+                )
+            output_paths[target_col].append(
+                plot_peak_prediction_rows(
+                    records,
+                    plot_rows,
+                    target_col=target_col,
+                    dataset_name=dataset_name,
+                    output_dir=output_dir,
+                    task_name=plot_group_name,
+                    prediction_label="逐日最佳基线组合预测",
+                    filename_suffix="逐日最佳基线组合预测",
                 )
             )
     return output_paths

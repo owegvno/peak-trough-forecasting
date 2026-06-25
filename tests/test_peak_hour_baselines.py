@@ -5,7 +5,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from wave_experiments.baselines.load_baseline_data import SPLIT_COLUMN, TEST_SPLIT, VAL_SPLIT
+from wave_experiments.baselines.load_baseline_data import (
+    SPLIT_COLUMN,
+    TEST_SPLIT,
+    TRAIN_SPLIT,
+    VAL_SPLIT,
+)
 from wave_experiments.baselines.peak_hour_baselines import (
     BASELINE_NAMES,
     build_peak_hour_predictions,
@@ -61,12 +66,12 @@ def _split_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return pd.DataFrame(train_rows), pd.DataFrame(val_rows), pd.DataFrame(test_rows)
 
 
-def test_build_peak_hour_predictions_generates_all_baselines_for_val_and_test() -> None:
+def test_build_peak_hour_predictions_generates_all_baselines_for_train_val_and_test() -> None:
     train_df, val_df, test_df = _split_frames()
 
     predictions = build_peak_hour_predictions(train_df, val_df, test_df)
 
-    assert set(predictions[SPLIT_COLUMN]) == {VAL_SPLIT, TEST_SPLIT}
+    assert set(predictions[SPLIT_COLUMN]) == {TRAIN_SPLIT, VAL_SPLIT, TEST_SPLIT}
     assert set(predictions["baseline_name"]) == set(BASELINE_NAMES)
     assert predictions["baseline_peak_hour"].between(0, 23).all()
     assert predictions["baseline_peak_hour"].isna().sum() == 0
@@ -98,6 +103,14 @@ def test_build_peak_hour_predictions_generates_all_baselines_for_val_and_test() 
     assert test_by_baseline["median_last_4"] == 12
     assert test_by_baseline["global_mode"] == 22
     assert test_by_baseline["weekday_mode"] == 22
+
+    train_by_baseline = (
+        predictions.loc[predictions["样本ID"] == "T1"]
+        .set_index("baseline_name")["baseline_peak_hour"]
+        .to_dict()
+    )
+    assert train_by_baseline["mode_last_4"] == 5
+    assert train_by_baseline["global_mode"] == 7
 
 
 def test_evaluate_peak_hour_baselines_outputs_four_metric_levels() -> None:
@@ -165,7 +178,7 @@ def test_run_peak_hour_baselines_writes_prediction_and_metric_csvs(tmp_path: Pat
 
     written_predictions = pd.read_csv(prediction_path)
     written_metrics = pd.read_csv(metrics_path)
-    assert set(written_predictions[SPLIT_COLUMN]) == {VAL_SPLIT, TEST_SPLIT}
+    assert set(written_predictions[SPLIT_COLUMN]) == {TRAIN_SPLIT, VAL_SPLIT, TEST_SPLIT}
     assert set(written_predictions["baseline_name"]) == set(BASELINE_NAMES)
     assert written_predictions["baseline_peak_hour"].between(0, 23).all()
     assert {"普通小时误差", "环形小时误差", "Top-1 accuracy", "±1h 命中率", "±2h 命中率"}.issubset(

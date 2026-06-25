@@ -8,6 +8,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import pandas as pd
 
+from wave_dataset.visualization import plot_selected_best_baseline_prediction_batch
 from wave_experiments.baselines.load_baseline_data import (
     HORIZON_COLUMN,
     SPLIT_COLUMN,
@@ -466,6 +467,12 @@ def run_select_best_baselines(
     best_peak_hour_path: Optional[Union[Path, str]] = None,
     selected_dataset_path: Optional[Union[Path, str]] = None,
     report_path: Optional[Union[Path, str]] = None,
+    plot_selected_best_baselines: bool = True,
+    hourly_csv: Union[Path, str] = "ETTh1.csv",
+    plot_output_root: Union[Path, str] = "数据集可视化",
+    dataset_name: str = "ETTH1_pred14_seq4",
+    plot_split: str = VAL_SPLIT,
+    plot_sample_count: int = 6,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, str]:
     """Read baseline outputs, select best baselines, and write all artifacts."""
 
@@ -527,6 +534,15 @@ def run_select_best_baselines(
     best_value.to_csv(resolved_best_peak_value_path, index=False)
     best_hour.to_csv(resolved_best_peak_hour_path, index=False)
     selected_dataset.to_csv(resolved_selected_dataset_path, index=False)
+    if plot_selected_best_baselines:
+        plot_selected_best_baseline_prediction_batch(
+            hourly_csv=hourly_csv,
+            selected_baseline_csv=resolved_selected_dataset_path,
+            output_root=plot_output_root,
+            dataset_name=dataset_name,
+            split=plot_split,
+            sample_count=plot_sample_count,
+        )
 
     report = build_report(
         best_value,
