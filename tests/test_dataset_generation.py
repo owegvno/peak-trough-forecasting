@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from wave_dataset.config import COLUMN_EN_TO_ZH, TARGET_COLUMNS
 from wave_dataset.peak_dataset import (
@@ -23,6 +24,7 @@ from wave_dataset.visualization import (
     merge_baseline_peak_predictions,
     plot_peak_hour_prediction_batch,
     plot_peak_prediction_batch,
+    plot_peak_prediction_rows,
     plot_peak_value_prediction_batch,
     plot_selected_best_baseline_prediction_batch,
     plot_dataset_visualizations,
@@ -43,6 +45,76 @@ def make_records(start: datetime, hours: int) -> list[dict[str, str]]:
             row[col] = str(hour + col_index * 0.1)
         records.append(row)
     return records
+
+
+def parse_hourly_csv_records(rows: list[dict[str, str]]) -> list[dict[str, object]]:
+    parsed: list[dict[str, object]] = []
+    for raw in rows:
+        row: dict[str, object] = {"date": datetime.strptime(raw["date"], "%Y/%m/%d %H:%M")}
+        for col in TARGET_COLUMNS:
+            row[col] = float(raw[col])
+        parsed.append(row)
+    return parsed
+
+
+class RecordingFigure:
+    def tight_layout(self) -> None:
+        return None
+
+    def savefig(self, path: Path) -> None:
+        Path(path).write_bytes(b"fake-png")
+
+
+class RecordingAxes:
+    def __init__(self) -> None:
+        self.plots: list[dict[str, object]] = []
+        self.scatter_summaries: list[dict[str, object]] = []
+        self.vertical_lines: list[int] = []
+        self.xlim: tuple[int, int] | None = None
+
+    @staticmethod
+    def _list(values: object) -> list[float]:
+        if hasattr(values, "tolist"):
+            raw_values = values.tolist()
+        else:
+            raw_values = list(values)  # type: ignore[arg-type]
+        output: list[float] = []
+        for value in raw_values:
+            current = float(value)
+            output.append(int(current) if current.is_integer() else current)
+        return output
+
+    def plot(self, x: object, y: object, **kwargs: object) -> None:
+        self.plots.append({"x": self._list(x), "y": self._list(y), "label": kwargs.get("label")})
+
+    def scatter(self, x: object, y: object, **kwargs: object) -> None:
+        self.scatter_summaries.append(
+            {"label": kwargs.get("label"), "x": self._list(x), "y": self._list(y)}
+        )
+
+    def axvline(self, x: int, **kwargs: object) -> None:
+        self.vertical_lines.append(int(x))
+
+    def set_title(self, title: str) -> None:
+        return None
+
+    def set_xlabel(self, label: str) -> None:
+        return None
+
+    def set_ylabel(self, label: str) -> None:
+        return None
+
+    def set_xlim(self, left: int, right: int) -> None:
+        self.xlim = (left, right)
+
+    def set_xticks(self, ticks: list[int]) -> None:
+        return None
+
+    def grid(self, *args: object, **kwargs: object) -> None:
+        return None
+
+    def legend(self, *args: object, **kwargs: object) -> None:
+        return None
 
 
 def write_wide_rows(dataset_dir: Path, target_col: str, rows: list[dict[str, object]], pred_days: int = 2) -> None:
@@ -460,6 +532,58 @@ class DatasetGenerationTests(unittest.TestCase):
         self.assertEqual(merged[0]["目标峰值小时"], 7)
         self.assertEqual(merged[0]["baseline_peak_value"], 10.25)
         self.assertEqual(merged[0]["baseline_peak_hour"], 8)
+
+    def test_plot_peak_prediction_rows_includes_history_window_and_shifts_prediction_points(self) -> None:
+        records = parse_hourly_csv_records(make_records(datetime(2020, 1, 1), 4 * 24))
+        prediction_rows = [
+            {
+                "样本ID": "S000001",
+                "预测起点日期": "2020-01-03",
+                "数据集划分": "验证",
+                "预测天数": 1,
+                "目标变量": "HUFL",
+                "目标峰值": 23.0,
+                "目标峰值小时": 23,
+                "baseline_peak_value": 11.0,
+                "baseline_peak_hour": 12,
+            },
+            {
+                "样本ID": "S000001",
+                "预测起点日期": "2020-01-03",
+                "数据集划分": "验证",
+                "预测天数": 2,
+                "目标变量": "HUFL",
+                "目标峰值": 23.0,
+                "目标峰值小时": 23,
+                "baseline_peak_value": 12.0,
+                "baseline_peak_hour": 18,
+            },
+        ]
+        fake_ax = RecordingAxes()
+        fake_fig = RecordingFigure()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wave_dataset.visualization.setup_chinese_font", lambda: None):
+                with patch("wave_dataset.visualization.plt.subplots", return_value=(fake_fig, fake_ax)):
+                    with patch("wave_dataset.visualization.plt.close", lambda fig: None):
+                        path = plot_peak_prediction_rows(
+                            records,
+                            prediction_rows,
+                            target_col="HUFL",
+                            dataset_name="ETTH1_pred2_seq2",
+                            output_dir=Path(tmp),
+                            task_name="测试图",
+                            prediction_label="预测",
+                            filename_suffix="预测",
+                        )
+
+        self.assertTrue(path.name.endswith("_预测.png"))
+        self.assertEqual(len(fake_ax.plots[0]["x"]), 96)
+        self.assertEqual(fake_ax.xlim, (1, 96))
+        self.assertIn(48, fake_ax.vertical_lines)
+        self.assertIn({"label": "历史波峰", "x": [24, 48], "y": [23.0, 23.0]}, fake_ax.scatter_summaries)
+        self.assertIn({"label": "真实波峰", "x": [72, 96], "y": [23.0, 23.0]}, fake_ax.scatter_summaries)
+        self.assertIn({"label": "预测", "x": [61, 91], "y": [11.0, 12.0]}, fake_ax.scatter_summaries)
 
     def test_plot_peak_value_prediction_batch_writes_all_baseline_folders(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

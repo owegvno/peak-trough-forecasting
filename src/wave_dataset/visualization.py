@@ -309,6 +309,26 @@ def prediction_window_from_forecast_start(
     return window
 
 
+def plot_window_from_forecast_start(
+    records: list[dict[str, object]],
+    forecast_start_text: str,
+    history_len: int,
+    pred_len: int,
+) -> list[dict[str, object]]:
+    forecast_start = datetime.strptime(forecast_start_text, "%Y-%m-%d")
+    window_start = forecast_start - timedelta(hours=history_len)
+    window_end = forecast_start + timedelta(hours=pred_len)
+    window = [
+        row
+        for row in records
+        if isinstance(row["date"], datetime) and window_start <= row["date"] < window_end
+    ]
+    expected_len = history_len + pred_len
+    if len(window) != expected_len:
+        raise ValueError(f"绘图窗口长度应为 {expected_len}，实际为 {len(window)}")
+    return window
+
+
 def baseline_prediction_plot_dir(
     output_root: str | Path,
     dataset_name: str,
@@ -402,6 +422,15 @@ def _series_value_for_prediction_hour(
 
 
 def _peak_prediction_coordinates(rows: list[dict[str, Any]], x_hour_column: str, y_value_column: str) -> tuple[np.ndarray, np.ndarray]:
+    return _peak_prediction_coordinates_with_offset(rows, x_hour_column, y_value_column, x_offset=0)
+
+
+def _peak_prediction_coordinates_with_offset(
+    rows: list[dict[str, Any]],
+    x_hour_column: str,
+    y_value_column: str,
+    x_offset: int = 0,
+) -> tuple[np.ndarray, np.ndarray]:
     x_values: list[int] = []
     y_values: list[float] = []
     for row in rows:
@@ -409,9 +438,22 @@ def _peak_prediction_coordinates(rows: list[dict[str, Any]], x_hour_column: str,
         hour = int(row[x_hour_column])
         if hour < 0 or hour > 23:
             raise ValueError(f"预测小时必须在 0 到 23 之间，发现: {hour}")
-        x_values.append((horizon - 1) * 24 + hour + 1)
+        x_values.append(x_offset + (horizon - 1) * 24 + hour + 1)
         y_values.append(float(row[y_value_column]))
     return np.array(x_values), np.array(y_values)
+
+
+def _history_daily_peak_coordinates(values: np.ndarray, history_len: int) -> tuple[np.ndarray, np.ndarray]:
+    peak_x: list[int] = []
+    peak_y: list[float] = []
+    for start in range(0, history_len, 24):
+        day_values = values[start : start + 24]
+        if len(day_values) != 24:
+            continue
+        peak_hour = int(np.argmax(day_values))
+        peak_x.append(start + peak_hour + 1)
+        peak_y.append(float(day_values[peak_hour]))
+    return np.array(peak_x), np.array(peak_y)
 
 
 def plot_peak_prediction_rows(
@@ -423,6 +465,7 @@ def plot_peak_prediction_rows(
     task_name: str,
     prediction_label: str,
     filename_suffix: str,
+    include_history: bool = True,
 ) -> Path:
     if not prediction_rows:
         raise ValueError(f"{target_col} 没有可绘制的{task_name}预测记录")
@@ -431,18 +474,32 @@ def plot_peak_prediction_rows(
     forecast_start = str(prediction_rows[0]["预测起点日期"])
     pred_days = max(int(row["预测天数"]) for row in prediction_rows)
     pred_len = pred_days * 24
-    window = prediction_window_from_forecast_start(records, forecast_start, pred_len)
+    history_len = dataset_window_from_name(dataset_name).seq_len if include_history else 0
+    window = plot_window_from_forecast_start(records, forecast_start, history_len, pred_len)
     _, values = get_series(window, target_col)
     x = np.arange(1, len(values) + 1)
-    true_x, true_y = _peak_prediction_coordinates(prediction_rows, "目标峰值小时", "目标峰值")
-    pred_x, pred_y = _peak_prediction_coordinates(prediction_rows, "baseline_peak_hour", "baseline_peak_value")
+    history_x, history_y = _history_daily_peak_coordinates(values, history_len)
+    true_x, true_y = _peak_prediction_coordinates_with_offset(
+        prediction_rows,
+        "目标峰值小时",
+        "目标峰值",
+        x_offset=history_len,
+    )
+    pred_x, pred_y = _peak_prediction_coordinates_with_offset(
+        prediction_rows,
+        "baseline_peak_hour",
+        "baseline_peak_value",
+        x_offset=history_len,
+    )
 
     setup_chinese_font()
     fig, ax = plt.subplots(figsize=(16, 7), dpi=160)
     ax.plot(x, values, color="#34495e", linewidth=1.45, label="原始序列")
+    if len(history_x):
+        ax.scatter(history_x, history_y, marker="^", facecolors="none", edgecolors="#ff7f0e", linewidths=1.7, s=72, label="历史波峰", zorder=4)
     ax.scatter(true_x, true_y, marker="^", facecolors="none", edgecolors="#e41a1c", linewidths=1.7, s=82, label="真实波峰", zorder=4)
     ax.scatter(pred_x, pred_y, marker="^", color="#e41a1c", s=58, label=prediction_label, zorder=5)
-    draw_day_boundaries(ax, len(values))
+    draw_day_boundaries(ax, len(values), split_at=history_len if history_len else None)
     finish_plot(
         ax,
         f"{dataset_name} {sample_id} {target_col} {task_name}",
