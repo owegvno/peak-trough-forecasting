@@ -125,6 +125,64 @@ def test_select_best_peak_hour_baselines_uses_hit_rate_then_hour_error() -> None
 
 
 def test_build_dataset_with_selected_baselines_outputs_one_row_per_sample_with_baseline_peak() -> None:
+    source_df = pd.DataFrame(
+        [
+            {
+                "样本ID": "S1",
+                "预测起点日期": "2017-01-01",
+                SPLIT_COLUMN: VAL_SPLIT,
+                TARGET_VARIABLE_COLUMN: "HUFL",
+                HORIZON_COLUMN: 1,
+                "基线峰值": 7.0,
+                "目标峰值": 10.0,
+                "目标峰值残差": 3.0,
+                "目标峰值小时": 5,
+                "目标谷值": 1.0,
+                "目标谷值残差": -1.0,
+                "目标谷值小时": 3,
+                "日历_星期": 2,
+                "日历_月份": 1,
+                "HUFL_过去96小时_均值": 1.5,
+                "OT_历史峰值_均值4天": 22.0,
+            },
+            {
+                "样本ID": "S2",
+                "预测起点日期": "2017-01-02",
+                SPLIT_COLUMN: TEST_SPLIT,
+                TARGET_VARIABLE_COLUMN: "HUFL",
+                HORIZON_COLUMN: 1,
+                "基线峰值": 8.0,
+                "目标峰值": 12.0,
+                "目标峰值残差": 4.0,
+                "目标峰值小时": 6,
+                "目标谷值": 2.0,
+                "目标谷值残差": -2.0,
+                "目标谷值小时": 4,
+                "日历_星期": 3,
+                "日历_月份": 1,
+                "HUFL_过去96小时_均值": 2.5,
+                "OT_历史峰值_均值4天": 23.0,
+            },
+            {
+                "样本ID": "S3",
+                "预测起点日期": "2016-01-02",
+                SPLIT_COLUMN: TRAIN_SPLIT,
+                TARGET_VARIABLE_COLUMN: "HUFL",
+                HORIZON_COLUMN: 1,
+                "基线峰值": 9.0,
+                "目标峰值": 14.0,
+                "目标峰值残差": 5.0,
+                "目标峰值小时": 7,
+                "目标谷值": 3.0,
+                "目标谷值残差": -3.0,
+                "目标谷值小时": 5,
+                "日历_星期": 4,
+                "日历_月份": 1,
+                "HUFL_过去96小时_均值": 3.5,
+                "OT_历史峰值_均值4天": 24.0,
+            },
+        ]
+    )
     value_predictions = pd.DataFrame(
         [
             {
@@ -234,6 +292,7 @@ def test_build_dataset_with_selected_baselines_outputs_one_row_per_sample_with_b
     )
 
     dataset = build_dataset_with_selected_baselines(
+        source_df,
         value_predictions,
         hour_predictions,
         best_value,
@@ -242,6 +301,12 @@ def test_build_dataset_with_selected_baselines_outputs_one_row_per_sample_with_b
 
     assert len(dataset) == 3
     assert set(dataset[SPLIT_COLUMN]) == {TRAIN_SPLIT, VAL_SPLIT, TEST_SPLIT}
+    assert "日历_星期" in dataset.columns
+    assert "日历_月份" in dataset.columns
+    assert "HUFL_过去96小时_均值" in dataset.columns
+    assert "OT_历史峰值_均值4天" in dataset.columns
+    assert "基线峰值" in dataset.columns
+    assert "目标峰值残差" in dataset.columns
     assert dataset["baseline_peak"].isna().sum() == 0
     assert set(dataset["peak_value_baseline_name"]) == {"cycle_mod_4"}
     assert set(dataset["peak_hour_baseline_name"]) == {"mode_last_4"}
@@ -256,6 +321,28 @@ def test_build_dataset_with_selected_baselines_outputs_one_row_per_sample_with_b
 
 
 def _write_minimal_baseline_inputs(tmp_path):
+    source_df = pd.DataFrame(
+        [
+            {
+                "样本ID": "S1",
+                "预测起点日期": "2017-01-01",
+                SPLIT_COLUMN: VAL_SPLIT,
+                TARGET_VARIABLE_COLUMN: "HUFL",
+                HORIZON_COLUMN: 1,
+                "基线峰值": 7.0,
+                "目标峰值": 10.0,
+                "目标峰值残差": 3.0,
+                "目标峰值小时": 5,
+                "目标谷值": 1.0,
+                "目标谷值残差": -1.0,
+                "目标谷值小时": 3,
+                "日历_星期": 2,
+                "日历_月份": 1,
+                "HUFL_过去96小时_均值": 1.5,
+                "OT_历史峰值_均值4天": 22.0,
+            }
+        ]
+    )
     value_predictions = pd.DataFrame(
         [
             {
@@ -322,6 +409,7 @@ def _write_minimal_baseline_inputs(tmp_path):
         "value_metrics": tmp_path / "value_metrics.csv",
         "hour_predictions": tmp_path / "hour_predictions.csv",
         "hour_metrics": tmp_path / "hour_metrics.csv",
+        "source": tmp_path / "source.csv",
         "best_value": tmp_path / "best_value.csv",
         "best_hour": tmp_path / "best_hour.csv",
         "selected_dataset": tmp_path / "dataset_with_selected_baselines.csv",
@@ -332,7 +420,41 @@ def _write_minimal_baseline_inputs(tmp_path):
     value_metrics.to_csv(paths["value_metrics"], index=False)
     hour_predictions.to_csv(paths["hour_predictions"], index=False)
     hour_metrics.to_csv(paths["hour_metrics"], index=False)
+    source_df.to_csv(paths["source"], index=False)
     return paths
+
+
+def test_run_select_best_baselines_writes_full_source_features(tmp_path, monkeypatch) -> None:
+    paths = _write_minimal_baseline_inputs(tmp_path)
+
+    monkeypatch.setattr(
+        "wave_experiments.baselines.select_best_baselines.plot_selected_best_baseline_prediction_batch",
+        lambda **kwargs: {},
+    )
+
+    _, _, dataset, report = run_select_best_baselines(
+        source_data_path=paths["source"],
+        peak_value_prediction_path=paths["value_predictions"],
+        peak_value_metrics_path=paths["value_metrics"],
+        peak_hour_prediction_path=paths["hour_predictions"],
+        peak_hour_metrics_path=paths["hour_metrics"],
+        best_peak_value_path=paths["best_value"],
+        best_peak_hour_path=paths["best_hour"],
+        selected_dataset_path=paths["selected_dataset"],
+        report_path=paths["report"],
+        plot_selected_best_baselines=False,
+    )
+
+    written = pd.read_csv(paths["selected_dataset"])
+    for column in ["日历_星期", "日历_月份", "HUFL_过去96小时_均值", "OT_历史峰值_均值4天"]:
+        assert column in dataset.columns
+        assert column in written.columns
+    assert len(written.columns) > 15
+    assert written["baseline_peak"].isna().sum() == 0
+    assert written["baseline_peak_hour"].isna().sum() == 0
+    assert "输出表列数" in report
+    assert "历史统计特征字段" in report
+    assert "不是第 7 步残差学习的最终标签" in report
 
 
 def test_run_select_best_baselines_plots_selected_dataset_by_default(tmp_path, monkeypatch) -> None:
@@ -349,6 +471,7 @@ def test_run_select_best_baselines_plots_selected_dataset_by_default(tmp_path, m
     )
 
     run_select_best_baselines(
+        source_data_path=paths["source"],
         peak_value_prediction_path=paths["value_predictions"],
         peak_value_metrics_path=paths["value_metrics"],
         peak_hour_prediction_path=paths["hour_predictions"],
@@ -387,6 +510,7 @@ def test_run_select_best_baselines_can_skip_selected_dataset_plot(tmp_path, monk
     )
 
     run_select_best_baselines(
+        source_data_path=paths["source"],
         peak_value_prediction_path=paths["value_predictions"],
         peak_value_metrics_path=paths["value_metrics"],
         peak_hour_prediction_path=paths["hour_predictions"],
