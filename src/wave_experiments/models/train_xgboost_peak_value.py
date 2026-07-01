@@ -1,4 +1,4 @@
-"""Train one LightGBM peak-value residual regressor per target variable."""
+"""Train one XGBoost peak-value residual regressor per target variable."""
 
 from __future__ import annotations
 
@@ -15,17 +15,18 @@ from wave_dataset.visualization import plot_lightgbm_peak_value_prediction_batch
 MODEL_MATRIX_PATH = Path("实验输出/results/features/model_matrix_seq96_pred336.csv")
 FEATURE_COLUMNS_PATH = Path("实验输出/results/features/feature_columns_seq96_pred336.txt")
 BEST_RULE_BASELINE_PATH = Path("实验输出/results/baselines/best_peak_value_baseline_by_group.csv")
-OUTPUT_DIR = Path("实验输出/results/models/lightgbm_peak_value")
+BASELINE_METRICS_PATH = Path("实验输出/results/baselines/peak_value_baseline_metrics.csv")
+OUTPUT_DIR = Path("实验输出/results/models/xgboost_peak_value")
 MODEL_DIR = OUTPUT_DIR / "models"
 
-PREDICTION_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_predictions.csv"
-VAL_PREDICTION_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_val_predictions.csv"
-TEST_PREDICTION_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_test_predictions.csv"
-METRICS_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_metrics.csv"
-COMPARISON_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_vs_best_rule_baseline.csv"
-FEATURE_IMPORTANCE_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_feature_importance.csv"
-SUMMARY_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_model_summary.csv"
-REPORT_OUTPUT_PATH = OUTPUT_DIR / "lightgbm_peak_value_report.md"
+PREDICTION_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_predictions.csv"
+VAL_PREDICTION_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_val_predictions.csv"
+TEST_PREDICTION_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_test_predictions.csv"
+METRICS_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_metrics.csv"
+COMPARISON_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_vs_best_rule_baseline.csv"
+FEATURE_IMPORTANCE_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_feature_importance.csv"
+SUMMARY_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_model_summary.csv"
+REPORT_OUTPUT_PATH = OUTPUT_DIR / "xgboost_peak_value_report.md"
 
 SAMPLE_ID_COLUMN = "样本ID"
 START_DATE_COLUMN = "预测起点日期"
@@ -42,7 +43,7 @@ TEST_SPLIT = "测试"
 EVAL_SPLITS = (VAL_SPLIT, TEST_SPLIT)
 EXPECTED_TARGET_VARIABLES = ("HUFL", "HULL", "LUFL", "LULL", "MUFL", "MULL", "OT")
 
-MODEL_NAME = "lightgbm_peak_value"
+MODEL_NAME = "xgboost_peak_value"
 BASELINE_NAME = "best_rule_peak_value"
 METRIC_COLUMNS = ("MAE", "RMSE", "sMAPE")
 PREDICTION_COLUMNS = (
@@ -61,7 +62,7 @@ PREDICTION_COLUMNS = (
 
 
 @dataclass(frozen=True)
-class LightGBMPeakValueOutputs:
+class XGBoostPeakValueOutputs:
     prediction_path: Path
     val_prediction_path: Path
     test_prediction_path: Path
@@ -85,7 +86,7 @@ def _require_columns(df: pd.DataFrame, columns: Iterable[str], label: str) -> No
 
 
 def read_feature_columns(path: Union[Path, str]) -> List[str]:
-    """Read the model feature column list."""
+    """Read the fixed feature list used by the LightGBM experiment."""
 
     feature_columns = [
         line.strip() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()
@@ -304,7 +305,7 @@ def _aggregate_best_rule_baseline(
 
 def _load_best_rule_baseline(
     best_rule_baseline_path: Union[Path, str],
-    baseline_metrics_path: Optional[Union[Path, str]] = None,
+    baseline_metrics_path: Optional[Union[Path, str]] = BASELINE_METRICS_PATH,
 ) -> pd.DataFrame:
     best_rule = pd.read_csv(best_rule_baseline_path)
     _require_columns(
@@ -323,12 +324,13 @@ def _load_best_rule_baseline(
     if best_rule[HORIZON_COLUMN].isna().any():
         raise ValueError("最佳规则基线表的预测天数存在缺失或非数值")
     best_rule[HORIZON_COLUMN] = best_rule[HORIZON_COLUMN].astype(int)
-    rename_columns = {
-        "validation_MAE": f"{VAL_SPLIT}_MAE",
-        "validation_RMSE": f"{VAL_SPLIT}_RMSE",
-        "validation_sMAPE": f"{VAL_SPLIT}_sMAPE",
-    }
-    best_rule = best_rule.rename(columns=rename_columns)
+    best_rule = best_rule.rename(
+        columns={
+            "validation_MAE": f"{VAL_SPLIT}_MAE",
+            "validation_RMSE": f"{VAL_SPLIT}_RMSE",
+            "validation_sMAPE": f"{VAL_SPLIT}_sMAPE",
+        }
+    )
 
     if baseline_metrics_path is not None and Path(baseline_metrics_path).exists():
         baseline_metrics = pd.read_csv(baseline_metrics_path)
@@ -390,16 +392,11 @@ def compare_with_best_rule_baseline(
         "模型指标表",
     )
     best_rule = best_rule_baseline.copy()
-    raw_to_internal_columns = {
-        "validation_MAE": f"{VAL_SPLIT}_MAE",
-        "validation_RMSE": f"{VAL_SPLIT}_RMSE",
-        "validation_sMAPE": f"{VAL_SPLIT}_sMAPE",
-    }
     best_rule = best_rule.rename(
         columns={
-            source: target
-            for source, target in raw_to_internal_columns.items()
-            if source in best_rule.columns and target not in best_rule.columns
+            "validation_MAE": f"{VAL_SPLIT}_MAE",
+            "validation_RMSE": f"{VAL_SPLIT}_RMSE",
+            "validation_sMAPE": f"{VAL_SPLIT}_sMAPE",
         }
     )
     for metric in METRIC_COLUMNS:
@@ -407,8 +404,7 @@ def compare_with_best_rule_baseline(
         test_column = f"{TEST_SPLIT}_{metric}"
         if val_column in best_rule.columns and test_column not in best_rule.columns:
             best_rule[test_column] = best_rule[val_column]
-    best_rule[HORIZON_COLUMN] = pd.to_numeric(best_rule[HORIZON_COLUMN], errors="coerce")
-    best_rule[HORIZON_COLUMN] = best_rule[HORIZON_COLUMN].astype("Int64")
+    best_rule[HORIZON_COLUMN] = pd.to_numeric(best_rule[HORIZON_COLUMN], errors="coerce").astype("Int64")
 
     comparison_frames: List[pd.DataFrame] = []
     for split in EVAL_SPLITS:
@@ -505,37 +501,65 @@ def compare_with_best_rule_baseline(
         "sMAPE_improvement",
         "sMAPE_exceeds_best_rule",
     ]
+    comparison["imp"] = comparison["MAE_improvement"]
+    output_columns.insert(output_columns.index("MAE_exceeds_best_rule"), "imp")
     return comparison.loc[:, output_columns]
 
 
-def _lightgbm_params() -> Dict[str, object]:
+def _xgboost_params() -> Dict[str, object]:
     return {
-        "objective": "regression",
-        "metric": "l1",
-        "learning_rate": 0.03,
-        "num_leaves": 31,
-        "max_depth": -1,
-        "min_data_in_leaf": 20,
-        "feature_fraction": 0.8,
-        "bagging_fraction": 0.8,
-        "bagging_freq": 1,
-        "lambda_l1": 0.0,
-        "lambda_l2": 1.0,
-        "verbosity": -1,
+        "objective": "reg:squarederror",
+        "eval_metric": "mae",
+        "eta": 0.03,
+        "max_depth": 4,
+        "min_child_weight": 5,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "lambda": 1.0,
+        "alpha": 0.0,
         "seed": 2026,
-        "feature_pre_filter": False,
+        "tree_method": "hist",
+        "device": "cuda",
+        "nthread": 0,
     }
 
 
-def _predict_with_best_iteration(model: object, feature_frame: pd.DataFrame) -> np.ndarray:
+def _predict_with_best_iteration(model: object, matrix: object) -> np.ndarray:
     best_iteration = getattr(model, "best_iteration", None)
-    if best_iteration:
-        return model.predict(feature_frame, num_iteration=best_iteration)
-    return model.predict(feature_frame)
+    if best_iteration is not None and int(best_iteration) >= 0:
+        try:
+            return model.predict(matrix, iteration_range=(0, int(best_iteration) + 1))
+        except TypeError:
+            return model.predict(matrix)
+    return model.predict(matrix)
+
+
+def _feature_importance_frame(
+    model: object,
+    target_variable: str,
+    feature_columns: Sequence[str],
+    best_iteration: int,
+) -> pd.DataFrame:
+    safe_names = _safe_feature_names(feature_columns)
+    gain_map = model.get_score(importance_type="gain")
+    weight_map = model.get_score(importance_type="weight")
+    importance = pd.DataFrame(
+        {
+            "target_variable": target_variable,
+            "feature": list(feature_columns),
+            "importance_gain": [float(gain_map.get(name, 0.0)) for name in safe_names],
+            "importance_split": [float(weight_map.get(name, 0.0)) for name in safe_names],
+            "best_iteration": best_iteration,
+        }
+    )
+    return importance.sort_values(
+        ["target_variable", "importance_gain", "importance_split", "feature"],
+        ascending=[True, False, False, True],
+    )
 
 
 def _train_one_target(
-    lgb: object,
+    xgb: object,
     target_variable: str,
     matrix: pd.DataFrame,
     feature_columns: Sequence[str],
@@ -550,50 +574,46 @@ def _train_one_target(
     if train_df.empty or val_df.empty or test_df.empty:
         raise ValueError(f"{target_variable} 的训练/验证/测试数据不能为空")
 
+    feature_names = _safe_feature_names(feature_columns)
     train_x = _feature_frame(train_df, feature_columns)
     val_x = _feature_frame(val_df, feature_columns)
     test_x = _feature_frame(test_df, feature_columns)
     train_y = train_df[TARGET_RESIDUAL_COLUMN].astype("float64")
     val_y = val_df[TARGET_RESIDUAL_COLUMN].astype("float64")
 
-    train_set = lgb.Dataset(train_x, label=train_y, feature_name=_safe_feature_names(feature_columns))
-    val_set = lgb.Dataset(val_x, label=val_y, reference=train_set, feature_name=_safe_feature_names(feature_columns))
-    callbacks = [
-        lgb.early_stopping(stopping_rounds=early_stopping_rounds, verbose=False),
-        lgb.log_evaluation(period=0),
-    ]
-    model = lgb.train(
-        _lightgbm_params(),
-        train_set,
+    train_matrix = xgb.DMatrix(train_x, label=train_y, feature_names=feature_names)
+    val_matrix = xgb.DMatrix(val_x, label=val_y, feature_names=feature_names)
+    test_matrix = xgb.DMatrix(test_x, feature_names=feature_names)
+    model = xgb.train(
+        params=_xgboost_params(),
+        dtrain=train_matrix,
         num_boost_round=num_boost_round,
-        valid_sets=[val_set],
-        valid_names=[VAL_SPLIT],
-        callbacks=callbacks,
+        evals=[(val_matrix, VAL_SPLIT)],
+        early_stopping_rounds=early_stopping_rounds,
+        verbose_eval=False,
     )
 
     val_predictions = add_peak_value_predictions(
         val_df,
-        _predict_with_best_iteration(model, val_x),
+        _predict_with_best_iteration(model, val_matrix),
     )
     test_predictions = add_peak_value_predictions(
         test_df,
-        _predict_with_best_iteration(model, test_x),
+        _predict_with_best_iteration(model, test_matrix),
     )
     predictions = pd.concat([val_predictions, test_predictions], ignore_index=True)
 
-    importance = pd.DataFrame(
-        {
-            "target_variable": target_variable,
-            "feature": list(feature_columns),
-            "importance_gain": model.feature_importance(importance_type="gain"),
-            "importance_split": model.feature_importance(importance_type="split"),
-            "best_iteration": int(getattr(model, "best_iteration", 0) or 0),
-        }
-    ).sort_values(["target_variable", "importance_gain", "importance_split", "feature"], ascending=[True, False, False, True])
+    best_iteration = int(getattr(model, "best_iteration", num_boost_round - 1) or 0)
+    importance = _feature_importance_frame(
+        model=model,
+        target_variable=target_variable,
+        feature_columns=feature_columns,
+        best_iteration=best_iteration,
+    )
 
     model_dir.mkdir(parents=True, exist_ok=True)
-    model_path = model_dir / f"{target_variable}_peak_value.txt"
-    model.save_model(str(model_path), num_iteration=getattr(model, "best_iteration", None))
+    model_path = model_dir / f"{target_variable}_peak_value.json"
+    model.save_model(str(model_path))
 
     summary = {
         "target_variable": target_variable,
@@ -602,8 +622,8 @@ def _train_one_target(
         "val_rows": len(val_df),
         "test_rows": len(test_df),
         "feature_count": len(feature_columns),
-        "best_iteration": int(getattr(model, "best_iteration", 0) or 0),
-        "best_validation_l1": float(getattr(model, "best_score", {}).get(VAL_SPLIT, {}).get("l1", np.nan)),
+        "best_iteration": best_iteration,
+        "best_validation_mae": float(getattr(model, "best_score", np.nan)),
     }
     return predictions, importance, summary, model_path
 
@@ -614,7 +634,7 @@ def build_report(
     comparison: pd.DataFrame,
     output_paths: Sequence[Path],
 ) -> str:
-    """Build a compact markdown report for the LightGBM peak-value experiment."""
+    """Build a compact markdown report for the XGBoost peak-value experiment."""
 
     global_rows = comparison.loc[
         (comparison["eval_level"] == "global") & comparison[SPLIT_COLUMN].isin(EVAL_SPLITS)
@@ -629,7 +649,7 @@ def build_report(
         direction = "超过" if bool(item["MAE_exceeds_best_rule"]) else "未超过"
         status_lines.append(
             f"- {split}：{direction}最佳规则基线，"
-            f"LightGBM MAE={item['MAE']:.6g}，"
+            f"XGBoost MAE={item['MAE']:.6g}，"
             f"规则基线 MAE={item['baseline_MAE']:.6g}，"
             f"improvement={item['MAE_improvement']:.2%}"
         )
@@ -649,7 +669,7 @@ def build_report(
     )
     return "\n".join(
         [
-            "# LightGBM peak_value 残差回归报告",
+            "# XGBoost peak_value 残差回归报告",
             "",
             "## 是否超过最佳规则基线",
             "",
@@ -671,7 +691,7 @@ def build_report(
     )
 
 
-def plot_lightgbm_peak_value_predictions(
+def plot_xgboost_peak_value_predictions(
     prediction_csv: Union[Path, str] = PREDICTION_OUTPUT_PATH,
     hourly_csv: Union[Path, str] = "ETTh1.csv",
     output_root: Union[Path, str] = "数据集可视化",
@@ -680,7 +700,7 @@ def plot_lightgbm_peak_value_predictions(
     sample_count: int = 6,
     target_cols: Optional[Sequence[str]] = None,
 ) -> Tuple[Path, ...]:
-    """Plot LightGBM residual peak-value predictions for validation and test splits."""
+    """Plot XGBoost residual peak-value predictions for validation and test splits."""
 
     path_map = plot_lightgbm_peak_value_prediction_batch(
         hourly_csv=hourly_csv,
@@ -690,6 +710,9 @@ def plot_lightgbm_peak_value_predictions(
         target_cols=list(target_cols) if target_cols is not None else None,
         splits=tuple(splits),
         sample_count=sample_count,
+        plot_group_prefix="XGBoost_波峰残差预测",
+        prediction_label="XGBoost波峰残差预测",
+        filename_suffix="XGBoost波峰残差预测",
     )
     paths: List[Path] = []
     for split_paths in path_map.values():
@@ -698,26 +721,24 @@ def plot_lightgbm_peak_value_predictions(
     return tuple(paths)
 
 
-def run_lightgbm_peak_value_training(
+def run_xgboost_peak_value_training(
     matrix_path: Union[Path, str] = MODEL_MATRIX_PATH,
     feature_columns_path: Union[Path, str] = FEATURE_COLUMNS_PATH,
     best_rule_baseline_path: Union[Path, str] = BEST_RULE_BASELINE_PATH,
-    baseline_metrics_path: Optional[Union[Path, str]] = Path(
-        "实验输出/results/baselines/peak_value_baseline_metrics.csv"
-    ),
+    baseline_metrics_path: Optional[Union[Path, str]] = BASELINE_METRICS_PATH,
     output_dir: Union[Path, str] = OUTPUT_DIR,
     model_dir: Union[Path, str] = MODEL_DIR,
     num_boost_round: int = 2000,
     early_stopping_rounds: int = 100,
     plot_predictions: bool = True,
-) -> LightGBMPeakValueOutputs:
-    """Train seven LightGBM residual regressors and write all experiment artifacts."""
+) -> XGBoostPeakValueOutputs:
+    """Train seven XGBoost residual regressors and write all experiment artifacts."""
 
     try:
-        import lightgbm as lgb
+        import xgboost as xgb
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
-            "当前 Python 环境缺少 lightgbm；请在运行环境中安装 lightgbm 后重试。"
+            "当前 Python 环境缺少 xgboost；请在运行环境中安装 xgboost 后重试。"
         ) from exc
 
     resolved_output_dir = Path(output_dir)
@@ -738,7 +759,7 @@ def run_lightgbm_peak_value_training(
     model_paths: List[Path] = []
     for target_variable in target_variables:
         predictions, importance, summary, model_path = _train_one_target(
-            lgb=lgb,
+            xgb=xgb,
             target_variable=target_variable,
             matrix=matrix,
             feature_columns=feature_columns,
@@ -782,7 +803,7 @@ def run_lightgbm_peak_value_training(
 
     plot_paths: Tuple[Path, ...] = ()
     if plot_predictions:
-        plot_paths = plot_lightgbm_peak_value_predictions(
+        plot_paths = plot_xgboost_peak_value_predictions(
             prediction_csv=prediction_path,
             splits=EVAL_SPLITS,
         )
@@ -806,7 +827,7 @@ def run_lightgbm_peak_value_training(
     )
     report_path.write_text(report, encoding="utf-8")
 
-    return LightGBMPeakValueOutputs(
+    return XGBoostPeakValueOutputs(
         prediction_path=prediction_path,
         val_prediction_path=val_prediction_path,
         test_prediction_path=test_prediction_path,
@@ -821,7 +842,7 @@ def run_lightgbm_peak_value_training(
 
 
 def main() -> None:
-    outputs = run_lightgbm_peak_value_training()
+    outputs = run_xgboost_peak_value_training()
     comparison = pd.read_csv(outputs.comparison_path)
     global_comparison = comparison.loc[
         (comparison["eval_level"] == "global") & comparison[SPLIT_COLUMN].isin(EVAL_SPLITS)

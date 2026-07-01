@@ -629,6 +629,81 @@ def plot_peak_value_prediction_batch(
     return output_paths
 
 
+def plot_lightgbm_peak_value_prediction_batch(
+    hourly_csv: list[dict[str, object]] | str | Path = "ETTh1.csv",
+    prediction_csv: str | Path = "实验输出/results/models/lightgbm_peak_value/lightgbm_peak_value_predictions.csv",
+    output_root: str | Path = "数据集可视化",
+    dataset_name: str = "ETTH1_pred14_seq4",
+    target_cols: list[str] | None = None,
+    splits: tuple[str, ...] = ("验证", "测试"),
+    sample_count: int = 6,
+    predicted_value_column: str = "pred_peak_value",
+    true_value_column: str = "目标峰值",
+    plot_group_prefix: str = "LightGBM_波峰残差预测",
+    prediction_label: str = "LightGBM波峰残差预测",
+    filename_suffix: str = "LightGBM波峰残差预测",
+) -> dict[str, dict[str, list[Path]]]:
+    records = hourly_csv if isinstance(hourly_csv, list) else parse_hourly_csv(hourly_csv)
+    prediction_rows = read_prediction_rows(prediction_csv)
+    cols = target_cols or TARGET_COLUMNS
+    output_paths: dict[str, dict[str, list[Path]]] = {
+        split: {col: [] for col in cols} for split in splits
+    }
+
+    for split in splits:
+        task_name = f"{plot_group_prefix}_{split}"
+        sample_ids = evenly_sample_sample_ids(prediction_rows, split=split, sample_count=sample_count)
+        for target_col in cols:
+            output_dir = Path(output_root) / dataset_name / task_name / target_col
+            for sample_id in sample_ids:
+                filtered_rows = [
+                    row
+                    for row in prediction_rows
+                    if row.get("样本ID") == sample_id
+                    and row.get("目标变量") == target_col
+                    and row.get("数据集划分") == split
+                ]
+                if not filtered_rows:
+                    continue
+                filtered_rows = sorted(filtered_rows, key=lambda row: int(float(row["预测天数"])))
+                forecast_start = str(filtered_rows[0]["预测起点日期"])
+                pred_days = max(int(float(row["预测天数"])) for row in filtered_rows)
+                true_rows = _true_peak_by_horizon(
+                    _true_daily_peak_rows(records, forecast_start, target_col, pred_days)
+                )
+                plot_rows: list[dict[str, Any]] = []
+                for row in filtered_rows:
+                    horizon = int(float(row["预测天数"]))
+                    true_row = true_rows[horizon]
+                    true_value = row.get(true_value_column, "")
+                    plot_rows.append(
+                        {
+                            "样本ID": row["样本ID"],
+                            "预测起点日期": forecast_start,
+                            "数据集划分": row["数据集划分"],
+                            "预测天数": horizon,
+                            "目标变量": row["目标变量"],
+                            "目标峰值": float(true_value) if true_value != "" else float(true_row["目标峰值"]),
+                            "目标峰值小时": int(true_row["目标峰值小时"]),
+                            "baseline_peak_value": float(row[predicted_value_column]),
+                            "baseline_peak_hour": int(true_row["目标峰值小时"]),
+                        }
+                    )
+                output_paths[split][target_col].append(
+                    plot_peak_prediction_rows(
+                        records=records,
+                        prediction_rows=plot_rows,
+                        target_col=target_col,
+                        dataset_name=dataset_name,
+                        output_dir=output_dir,
+                        task_name=task_name,
+                        prediction_label=prediction_label,
+                        filename_suffix=filename_suffix,
+                    )
+                )
+    return output_paths
+
+
 def plot_peak_hour_prediction_batch(
     hourly_csv: list[dict[str, object]] | str | Path = "ETTh1.csv",
     hour_prediction_csv: str | Path = DEFAULT_BASELINE_HOUR_PREDICTION_CSV,
